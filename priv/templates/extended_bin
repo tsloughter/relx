@@ -135,7 +135,8 @@ find_erts_dir() {
 
 # Get node pid
 relx_get_pid() {
-    if output="$(relx_nodetool rpcterms os getpid)"
+    # if output="$(relx_nodetool rpcterms os getpid)"
+    if output="$(erl_call 'os getpid')"
     then
         echo "$output" | sed -e 's/"//g'
         return 0
@@ -206,6 +207,28 @@ relx_nodetool() {
                  "$ROOTDIR/bin/nodetool" \
                  $START_EPMD "$NAME_TYPE" "$NAME" "$command" $@
     fi
+}
+
+ping_or_exit() {
+    if ! erl_call 'erlang is_alive' > /dev/null; then
+        exit 1
+    fi
+}
+
+erl_call() {
+    command="$@"
+
+    "$BINDIR/erl_call" "$NAME_TYPE" "$NAME" -c "${COOKIE}" -a "${command}"
+}
+
+erl_eval() {
+    command="$@"
+
+    echo ${command} | "$BINDIR/erl_call" "$NAME_TYPE" "$NAME" -c "${COOKIE}" -e | sed 's/^{ok, \(.*\)}$/\1/'
+    echo
+
+    # /^{ok, .*}$/ { print gensub("^{ok, (.*)}$", "\\1"); exit;}
+    # /^{error, .*}$/ { print "RPC to ", $NODE, "failed: ", gensub("^{error, (.*)}$", "\\1"), "; exit;}
 }
 
 # Run an escript in the node's environment
@@ -547,7 +570,7 @@ case "$1" in
         relx_run_hooks "$PRE_STOP_HOOKS"
         # Wait for the node to completely stop...
         PID="$(relx_get_pid)"
-        if ! relx_nodetool "stop"; then
+        if ! erl_call 'init stop' > /dev/null; then
             exit 1
         fi
         while $(kill -s 0 "$PID" 2>/dev/null);
@@ -559,14 +582,14 @@ case "$1" in
 
     restart)
         ## Restart the VM without exiting the process
-        if ! relx_nodetool "restart"; then
+        if ! erl_call 'init restart' > /dev/null; then
             exit 1
         fi
         ;;
 
     reboot)
         ## Restart the VM completely (uses heart to restart it)
-        if ! relx_nodetool "reboot"; then
+        if ! erl_call 'init reboot' > /dev/null; then
             exit 1
         fi
         ;;
@@ -580,9 +603,8 @@ case "$1" in
 
     ping)
         ## See if the VM is alive
-        if ! relx_nodetool "ping"; then
-            exit 1
-        fi
+        ping_or_exit
+        echo "pong"
         ;;
 
     escript)
@@ -595,10 +617,7 @@ case "$1" in
 
     attach)
         # Make sure a node IS running
-        if ! relx_nodetool "ping" > /dev/null; then
-            echo "Node is not running!"
-            exit 1
-        fi
+        ping_or_exit
 
         if [ ! -w "$PIPE_DIR" ]
         then
@@ -612,10 +631,7 @@ case "$1" in
 
     remote_console)
         # Make sure a node IS running
-        if ! relx_nodetool "ping" > /dev/null; then
-            echo "Node is not running!"
-            exit 1
-        fi
+        ping_or_exit
 
         shift
         relx_rem_sh
@@ -631,10 +647,7 @@ case "$1" in
         COMMAND="$1"; shift
 
         # Make sure a node IS running
-        if ! relx_nodetool "ping" > /dev/null; then
-            echo "Node is not running!"
-            exit 1
-        fi
+        ping_or_exit
 
         relx_run_hooks "$PRE_INSTALL_UPGRADE_HOOKS"
 
@@ -646,10 +659,7 @@ case "$1" in
 
     versions)
         # Make sure a node IS running
-        if ! relx_nodetool "ping" > /dev/null; then
-            echo "Node is not running!"
-            exit 1
-        fi
+        ping_or_exit
 
         COMMAND="$1"; shift
 
@@ -728,42 +738,22 @@ case "$1" in
         ;;
     rpc)
         # Make sure a node IS running
-        if ! relx_nodetool "ping" > /dev/null; then
-            echo "Node is not running!"
-            exit 1
-        fi
+        ping_or_exit
 
         shift
 
-        relx_nodetool rpc $@
-        ;;
-    rpcterms)
-        # Make sure a node IS running
-        if ! relx_nodetool "ping" > /dev/null; then
-            echo "Node is not running!"
-            exit 1
-        fi
-
-        shift
-
-        relx_nodetool rpcterms $@
+        erl_call $@
         ;;
     eval)
         # Make sure a node IS running
-        if ! relx_nodetool "ping" > /dev/null; then
-            echo "Node is not running!"
-            exit 1
-        fi
+        ping_or_exit
 
         shift
-        relx_nodetool "eval" $@
+        erl_eval $@
         ;;
     status)
         # Make sure a node IS running
-        if ! relx_nodetool "ping" > /dev/null; then
-            echo "Node is not running!"
-            exit 1
-        fi
+        ping_or_exit
 
         [ ! -z "${STATUS_HOOK}" ] && [ "$SCRIPT_DIR/$STATUS_HOOK" ] && . "$SCRIPT_DIR/$STATUS_HOOK" $@
         ;;

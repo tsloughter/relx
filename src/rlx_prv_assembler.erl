@@ -713,6 +713,10 @@ include_erts(State, Release, OutputDir, RelDir) ->
 
                     case rlx_state:get(State, extended_start_script, false) of
                         true ->
+                            Bin = code:lib_dir(erl_interface, bin),
+                            ErlCall = filename:join([Bin, "erl_call"]),
+                            LocalErlCall = filename:join([LocalErts, "bin", "erl_call"]),
+                            ec_file:copy(ErlCall, LocalErlCall),
 
                             NodeToolFile = nodetool_contents(),
                             InstallUpgradeFile = install_upgrade_escript_contents(),
